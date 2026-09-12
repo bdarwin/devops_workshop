@@ -1,0 +1,87 @@
+name: concierge-pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # --- CI: build & test -----------------------------------------------------
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check app tests evals
+      - name: Unit + integration tests
+        run: pytest -q
+
+  # --- Security validation --------------------------------------------------
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt bandit pip-audit
+      - name: Dependency vulnerabilities
+        run: pip-audit -r requirements.txt
+      - name: Static analysis
+        run: bandit -q -r app
+      - name: Prompt-injection guardrail tests
+        run: pytest -q tests/test_security.py
+
+  # --- Container image ------------------------------------------------------
+  build:
+    needs: [ci, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t concierge:${{ github.sha }} .
+      - name: Smoke test the image
+        run: |
+          docker run -d -p 8000:8000 --name c concierge:${{ github.sha }}
+          sleep 5
+          curl -fsS localhost:8000/healthz
+          curl -fsS -X POST localhost:8000/chat -H 'content-type: application/json' \
+            -d '{"message":"book a flight to Tokyo"}'
+          docker rm -f c
+
+  # --- Staging --------------------------------------------------------------
+  staging:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: echo "deploy concierge:${{ github.sha }} to staging"
+
+  # --- Agent evaluation gate (blocks production) ----------------------------
+  agent-eval:
+    needs: staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Routing accuracy + groundedness
+        run: python evals/run_eval.py
+
+  # --- Production -----------------------------------------------------------
+  production:
+    needs: agent-eval
+    runs-on: ubuntu-latest
+    environment: production   # requires manual approval
+    steps:
+      - run: echo "deploy concierge:${{ github.sha }} to production"
+
+  # --- Monitoring -----------------------------------------------------------
+  monitor:
+    needs: production
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "post-deploy check: /healthz, /version, error rate, rollback on breach"

@@ -43,12 +43,15 @@ jobs:
       - run: docker build -t concierge:${{ github.sha }} .
       - name: Smoke test the image
         run: |
-          docker run -d -p 8000:8000 --name c concierge:${{ github.sha }}
-          sleep 5
-          curl -fsS localhost:8000/healthz
+          docker run -d -p 8000:8000 --name smoke concierge:${{ github.sha }}
+          for i in $(seq 1 20); do
+            curl -fsS localhost:8000/healthz && break
+            sleep 1
+          done
+          curl -fsS localhost:8000/healthz || { docker logs smoke; exit 1; }
           curl -fsS -X POST localhost:8000/chat -H 'content-type: application/json' \
             -d '{"message":"book a flight to Tokyo"}'
-          docker rm -f c
+          docker rm -f smoke
 
   # --- Staging --------------------------------------------------------------
   staging:

@@ -84,4 +84,4 @@ jobs:
     needs: production
     runs-on: ubuntu-latest
     steps:
-      - run: echo "post-deploy check: /healthz, /version, error rate, rollback on breach"
+      - run: echo "post-deploy check - /healthz, /version, error rate, rollback on breach"

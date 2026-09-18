@@ -1,7 +1,6 @@
 # Go East Travel Concierge — Agentic AI CI/CD Workshop
 
 A small multi-agent travel concierge plus the CI/CD pipeline that ships it.
-Built for NUS *Deploying and Operating AI Solutions*, Day 1 Workshop 1.
 
 ## The app
 
